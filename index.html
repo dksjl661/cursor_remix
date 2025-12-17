@@ -119,6 +119,23 @@
             display: flex;
         }
 
+        /* New Level Styles */
+        .scan-line-anim {
+            background: linear-gradient(to bottom, transparent, #00FF41, transparent);
+            height: 4px;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            animation: scan-move 2s linear infinite;
+            opacity: 0.5;
+        }
+        
+        @keyframes scan-move {
+            0% { top: -10%; }
+            100% { top: 110%; }
+        }
+
         input {
             background: transparent;
             border: none;
@@ -270,14 +287,47 @@
         <div id="darkness" class="absolute inset-0 bg-black z-20 pointer-events-none" style="background: radial-gradient(circle 150px at 50% 50%, transparent 0%, rgba(13,2,8,0.98) 100%);"></div>
 
         <!-- Decoy buttons -->
-        <div class="absolute top-1/4 left-1/4 p-4 border border-red-900 text-red-900 cursor-not-allowed select-none">TRAP</div>
-        <div class="absolute bottom-1/4 right-1/3 p-4 border border-red-900 text-red-900 cursor-not-allowed select-none">DECOY</div>
-        <div class="absolute top-1/2 right-10 p-4 border border-red-900 text-red-900 cursor-not-allowed select-none">NULL</div>
+        <div class="absolute top-1/4 left-1/4 p-4 border border-red-900 text-red-900 cursor-not-allowed select-none opacity-50">TRAP</div>
+        <div class="absolute bottom-1/4 right-1/3 p-4 border border-red-900 text-red-900 cursor-not-allowed select-none opacity-50">DECOY</div>
+        <div class="absolute top-1/2 right-10 p-4 border border-red-900 text-red-900 cursor-not-allowed select-none opacity-50">NULL</div>
         
         <!-- The Real Button (Positioned randomly by JS on load) -->
         <button id="exit-node" class="absolute border border-terminal-green text-terminal-green p-4 hover:bg-terminal-green hover:text-black cursor-pointer transition-colors z-10" style="top: 70%; left: 20%;">
             <span class="animate-blink">SYSTEM_EXIT()</span>
         </button>
+    </section>
+
+    <!-- Room 4: Local Storage -->
+    <section id="room-4" class="room">
+        <h1 class="text-4xl md:text-6xl font-bold mb-8 glitch-text" data-text="LEVEL 04">LEVEL 04</h1>
+        <div class="border border-terminal-green p-6 max-w-lg w-full text-center relative overflow-hidden">
+            <div class="scan-line-anim"></div>
+            <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-[#0D0208] px-2 text-xs">MEMORY DUMP</div>
+            <p class="mb-4 text-terminal-dim">Short-term memory is volatile.</p>
+            <p class="mb-8">"I've backed up the passcode to your Local Storage. Don't clear your cache."</p>
+            
+            <div class="flex flex-col items-center">
+                <i class="ph ph-hard-drives text-4xl mb-4 animate-pulse"></i>
+                <input type="text" id="input-4" placeholder="RETRIEVE DATA" autocomplete="off">
+                <div id="error-4" class="text-terminal-alert mt-2 h-6 text-sm"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Room 5: The Title Bar -->
+    <section id="room-5" class="room">
+        <h1 class="text-4xl md:text-6xl font-bold mb-8 glitch-text" data-text="LEVEL 05">LEVEL 05</h1>
+        <div class="border border-terminal-green p-6 max-w-lg w-full text-center relative">
+            <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-[#0D0208] px-2 text-xs">HEADER OVERFLOW</div>
+            <p class="mb-4 text-terminal-dim">The answer is above everything else.</p>
+            <p class="mb-8">"Stop looking at the page. Look at the tab."</p>
+            
+            <div class="flex flex-col items-center">
+                <i class="ph ph-arrow-fat-up text-4xl mb-4 animate-bounce"></i>
+                <input type="text" id="input-5" placeholder="INPUT HEADER" autocomplete="off">
+                <div id="error-5" class="text-terminal-alert mt-2 h-6 text-sm"></div>
+            </div>
+        </div>
     </section>
 
     <!-- Success Screen -->
@@ -290,24 +340,72 @@
     </section>
 
     <script>
+        /* --- AUDIO SYSTEM (New) --- */
+        const AudioSys = {
+            ctx: null,
+            init: function() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            },
+            play: function(freq, type, duration) {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            },
+            sfx: {
+                type: () => AudioSys.play(800 + Math.random()*200, 'square', 0.05),
+                error: () => {
+                    AudioSys.play(150, 'sawtooth', 0.2);
+                    setTimeout(() => AudioSys.play(100, 'sawtooth', 0.2), 150);
+                },
+                success: () => {
+                    AudioSys.play(600, 'sine', 0.1);
+                    setTimeout(() => AudioSys.play(1200, 'sine', 0.3), 100);
+                },
+                boot: () => {
+                    AudioSys.play(200, 'square', 1.0);
+                }
+            }
+        };
+
         /* --- GAME ENGINE --- */
         
         const state = {
             currentRoom: 'boot',
-            level2Code: null
+            level2Code: null,
+            level5Interval: null
         };
 
         // DOM Elements
         const rooms = document.querySelectorAll('.room');
         
         function switchRoom(roomId) {
+            AudioSys.sfx.success(); // Play sound on room switch
             rooms.forEach(r => r.classList.remove('active'));
             document.getElementById(roomId).classList.add('active');
             state.currentRoom = roomId;
 
+            // Cleanup previous levels
+            if (state.level5Interval) clearInterval(state.level5Interval);
+            document.title = "Subject 89: Escape Protocol"; // Reset title
+
             // Room specific init logic
             if (roomId === 'room-2') initLevel2();
             if (roomId === 'room-3') initLevel3();
+            if (roomId === 'room-4') initLevel4();
+            if (roomId === 'room-5') initLevel5();
         }
 
         /* --- BOOT SEQUENCE --- */
@@ -315,6 +413,7 @@
             "Initializing kernel...",
             "Loading sensory drivers...",
             "Bypassing mainframe security...",
+            "Audio modules loaded...",
             "Connection established."
         ];
         
@@ -324,6 +423,7 @@
         function typeWriter(text, i, fn) {
             if (i < text.length) {
                 bootEl.innerHTML += text.charAt(i);
+                if(i % 2 === 0) AudioSys.sfx.type(); // Type sound every other char
                 setTimeout(() => typeWriter(text, i + 1, fn), 30);
             } else if (fn) {
                 setTimeout(fn, 500);
@@ -341,6 +441,7 @@
                 document.getElementById('progress-container').classList.remove('hidden');
                 setTimeout(() => {
                     document.getElementById('progress-bar').style.width = '100%';
+                    AudioSys.sfx.boot();
                     setTimeout(() => {
                         document.getElementById('start-btn').classList.remove('hidden');
                     }, 2200);
@@ -349,6 +450,7 @@
         }
 
         document.getElementById('start-btn').addEventListener('click', () => {
+            AudioSys.init(); // Init Audio Context on user gesture
             switchRoom('room-1');
         });
 
@@ -370,6 +472,7 @@
                     error1.classList.add('text-terminal-green');
                     setTimeout(() => switchRoom('room-2'), 1000);
                 } else {
+                    AudioSys.sfx.error();
                     error1.innerText = "ACCESS DENIED";
                     input1.classList.add('animate-glitch');
                     setTimeout(() => input1.classList.remove('animate-glitch'), 500);
@@ -392,6 +495,7 @@
 
         document.querySelectorAll('.keypad-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                AudioSys.sfx.type();
                 if (currentInput2.length < 4) {
                     currentInput2 += btn.getAttribute('data-val');
                     updateDisplay2();
@@ -409,6 +513,7 @@
                 error2.innerText = "";
                 switchRoom('room-3');
             } else {
+                AudioSys.sfx.error();
                 error2.innerText = "INVALID SEQUENCE";
                 currentInput2 = "";
                 updateDisplay2();
@@ -444,7 +549,69 @@
         }
 
         document.getElementById('exit-node').addEventListener('click', () => {
-            switchRoom('success');
+            switchRoom('room-4');
+        });
+
+        /* --- LEVEL 4 LOGIC (Local Storage) --- */
+        function initLevel4() {
+            // Set the key in local storage
+            localStorage.setItem('SYSTEM_BACKUP', 'ETHER_NET');
+            console.log("Data saved to LocalStorage.");
+        }
+
+        const input4 = document.getElementById('input-4');
+        const error4 = document.getElementById('error-4');
+
+        input4.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                const val = input4.value.toUpperCase().trim();
+                if (val === 'ETHER_NET' || val === 'ETHERNET') {
+                    error4.innerText = "ACCESS GRANTED";
+                    error4.classList.remove('text-terminal-alert');
+                    error4.classList.add('text-terminal-green');
+                    setTimeout(() => switchRoom('room-5'), 1000);
+                } else {
+                    AudioSys.sfx.error();
+                    error4.innerText = "DATA MISMATCH";
+                    input4.classList.add('animate-glitch');
+                    setTimeout(() => input4.classList.remove('animate-glitch'), 500);
+                }
+            }
+        });
+
+        /* --- LEVEL 5 LOGIC (Title Bar) --- */
+        function initLevel5() {
+            // Animate title bar
+            let tick = 0;
+            const key = "PROTOCOL_7";
+            state.level5Interval = setInterval(() => {
+                tick++;
+                if (tick % 2 === 0) {
+                    document.title = `*** KEY: ${key} ***`;
+                } else {
+                    document.title = `___ KEY: ${key} ___`;
+                }
+            }, 1000);
+        }
+
+        const input5 = document.getElementById('input-5');
+        const error5 = document.getElementById('error-5');
+
+        input5.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                const val = input5.value.toUpperCase().trim();
+                if (val === 'PROTOCOL_7' || val === 'PROTOCOL7') {
+                    error5.innerText = "SYSTEM RELEASED";
+                    error5.classList.remove('text-terminal-alert');
+                    error5.classList.add('text-terminal-green');
+                    setTimeout(() => switchRoom('success'), 1000);
+                } else {
+                    AudioSys.sfx.error();
+                    error5.innerText = "INVALID HEADER";
+                    input5.classList.add('animate-glitch');
+                    setTimeout(() => input5.classList.remove('animate-glitch'), 500);
+                }
+            }
         });
 
     </script>
